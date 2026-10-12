@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RevStream</title>
+<meta name="description" content="How a billing lead's month-end spreadsheet became an in-house revenue system for a clinical diagnostics lab, built by one IT engineer working with Claude.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;600&family=Public+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  :root {
+    --ground: #f5f7f4;
+    --surface: #ffffff;
+    --ink: #14202a;
+    --muted: #5b6671;
+    --line: #d9ded8;
+    --green: #17795a;
+    --green-soft: #e3f1ea;
+    --amber: #a8691a;
+    --amber-soft: #fbf0dd;
+    --cell: #fbfcfa;
+    --shadow: rgba(20, 32, 42, .08);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f1519; --surface: #161e24; --ink: #e5ece8; --muted: #9aa6ad; --line: #2a353c;
+      --green: #4cc38a; --green-soft: #15302a; --amber: #e2a650; --amber-soft: #2e2416;
+      --cell: #131a1f; --shadow: rgba(0, 0, 0, .35); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f1519; --surface: #161e24; --ink: #e5ece8; --muted: #9aa6ad; --line: #2a353c;
+    --green: #4cc38a; --green-soft: #15302a; --amber: #e2a650; --amber-soft: #2e2416;
+    --cell: #131a1f; --shadow: rgba(0, 0, 0, .35); color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+    font: 17px/1.6 "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  a { color: var(--green); }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; border-radius: 4px; }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "Public Sans", sans-serif; letter-spacing: -.015em;
+    line-height: 1.1; text-wrap: balance; margin: 0; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+  .eyebrow { font: 600 12px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+  p { margin: 0 0 14px; max-width: 64ch; }
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+
+  /* ---- Opening ------------------------------------------------------------------------ */
+  header.top { padding: 22px 0; }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .wordmark { font: 800 20px/1 "Bricolage Grotesque", sans-serif; letter-spacing: -.02em; }
+  .wordmark span { color: var(--green); }
+  .top nav { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; }
+  .top nav a { color: var(--muted); text-decoration: none; }
+  .top nav a:hover { color: var(--ink); }
+
+  .hero { padding: 40px 0 72px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.25fr 1fr; gap: 44px; align-items: center; }
+  .hero h1 { font-size: clamp(34px, 4.6vw, 54px); font-weight: 800; }
+  .hero h1 em { font-style: normal; color: var(--green); }
+  .hero .lede { font-size: 19px; color: var(--muted); margin-top: 20px; }
+  .hero .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 22px; font-size: 14px; color: var(--muted); }
+  .hero .facts b { color: var(--ink); font-family: "JetBrains Mono", monospace; font-weight: 600; }
+
+  /* The before and after, drawn: the month-end spreadsheet, and the month RevStream closes. */
+  .scene { position: relative; min-height: 360px; }
+  .sheet { border: 1px solid var(--line); border-radius: 10px; background: var(--cell); overflow: hidden;
+    box-shadow: 0 1px 2px var(--shadow); transform: rotate(-1.5deg); }
+  .sheet-bar { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line);
+    font: 600 11px/1 "JetBrains Mono", monospace; color: var(--amber); }
+  .sheet-bar i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+  .grid { display: grid; grid-template-columns: 28px repeat(4, minmax(0, 1fr)); font: 11px/1.2 "JetBrains Mono", monospace; }
+  .grid div { padding: 6px 7px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .grid .h { background: var(--surface); color: var(--muted); text-align: center; font-weight: 600; }
+  .grid .f { color: var(--amber); background: var(--amber-soft); }
+  .closed { position: absolute; right: -6px; bottom: -18px; width: min(320px, 82%); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; box-shadow: 0 18px 40px var(--shadow); }
+  .closed .row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 6px 0;
+    border-bottom: 1px dashed var(--line); }
+  .closed .row:last-of-type { border-bottom: 0; }
+  .closed .row span:last-child { font-family: "JetBrains Mono", monospace; font-size: 13px; }
+  .stamp { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px; padding: 4px 10px;
+    border-radius: 999px; background: var(--green-soft); color: var(--green); font: 600 12px/1 "JetBrains Mono", monospace;
+    letter-spacing: .06em; text-transform: uppercase; }
+  .closed h3 { font-size: 18px; margin-bottom: 8px; }
+
+  /* ---- The idea ------------------------------------------------------------------------ */
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  .chores { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .chores li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: baseline;
+    padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 15.5px; }
+  .chores li::before { content: "✕"; color: var(--amber); font-weight: 700; }
+  h2 { font-size: clamp(28px, 3.6vw, 40px); font-weight: 700; margin-bottom: 18px; }
+
+  /* ---- Timeline ------------------------------------------------------------------------ */
+  .timeline { list-style: none; margin: 28px 0 0; padding: 0; position: relative; }
+  .timeline::before { content: ""; position: absolute; left: 118px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+  .timeline li { display: grid; grid-template-columns: 104px 1fr; gap: 32px; padding: 0 0 22px; position: relative; }
+  .timeline time { font: 600 13px/1.6 "JetBrains Mono", monospace; color: var(--muted); text-align: right; }
+  .timeline li::after { content: ""; position: absolute; left: 113px; top: 7px; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--ground); border: 2px solid var(--muted); }
+  .timeline li.key::after { background: var(--green); border-color: var(--green); }
+  .timeline li.next::after { background: var(--ground); border: 2px dashed var(--green); }
+  .timeline b { display: block; font-family: "Bricolage Grotesque", sans-serif; font-size: 19px; margin-bottom: 2px; }
+  .timeline p { color: var(--muted); font-size: 15.5px; margin: 0; }
+
+  /* ---- What it does ------------------------------------------------------------------- */
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 28px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+  .card h3 { font-size: 19px; margin-bottom: 8px; }
+  .card p { font-size: 15.5px; color: var(--muted); margin: 0; }
+  .card .was { display: block; margin-top: 12px; font: 12px/1.4 "JetBrains Mono", monospace; color: var(--amber); }
+  .card .was::before { content: "was: "; }
+
+  /* ---- Numbers ------------------------------------------------------------------------- */
+  .numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin-top: 28px;
+    background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .num { background: var(--surface); padding: 24px 22px; }
+  .num .v { font: 700 clamp(30px, 4vw, 44px)/1 "Bricolage Grotesque", sans-serif; letter-spacing: -.02em; }
+  .num .v small { font-size: .45em; color: var(--muted); font-weight: 600; margin-left: 4px; }
+  .num .l { margin-top: 10px; color: var(--muted); font-size: 14.5px; }
+  .note { font-size: 13.5px; color: var(--muted); margin-top: 14px; max-width: 80ch; }
+
+  /* ---- How it was built ---------------------------------------------------------------- */
+  .loop { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: 28px; counter-reset: step; }
+  .loop div { padding: 18px 18px 18px 0; border-top: 3px solid var(--green); counter-increment: step; }
+  .loop div + div { padding-left: 18px; }
+  .loop h3 { font-size: 17px; margin: 10px 0 6px; }
+  .loop h3::before { content: counter(step, decimal-leading-zero) "  "; font: 600 13px "JetBrains Mono", monospace; color: var(--green); }
+  .loop p { font-size: 15px; color: var(--muted); margin: 0; }
+  .principles { margin-top: 30px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 32px; padding: 0; list-style: none; }
+  .principles li { font-size: 15.5px; padding-left: 20px; position: relative; }
+  .principles li::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+
+  /* ---- Next ---------------------------------------------------------------------------- */
+  .next-box { margin-top: 24px; border: 1.5px dashed var(--green); border-radius: 14px; padding: 26px; background: var(--green-soft); }
+  .pending { display: inline-block; font: 600 11px/1 "JetBrains Mono", monospace; letter-spacing: .1em; text-transform: uppercase;
+    padding: 5px 9px; border-radius: 999px; border: 1px solid var(--green); color: var(--green); margin-bottom: 12px; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0 6px; font: 13px/1.3 "JetBrains Mono", monospace; }
+  .flow span { padding: 7px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); }
+  .flow em { font-style: normal; color: var(--green); }
+
+  footer { padding: 40px 0 56px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  footer p { max-width: 80ch; }
+
+  @media (max-width: 860px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; gap: 36px; }
+    .scene { margin-bottom: 30px; }
+    .cards, .numbers { grid-template-columns: 1fr 1fr; }
+    .loop { grid-template-columns: 1fr 1fr; row-gap: 18px; }
+    .loop div:nth-child(3) { padding-left: 0; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 16px; }
+    section { padding: 56px 0; }
+    .cards, .numbers, .loop, .principles { grid-template-columns: 1fr; }
+    .loop div + div { padding-left: 0; }
+    .timeline::before { left: 7px; }
+    .timeline li { grid-template-columns: 1fr; gap: 2px; padding-left: 30px; }
+    .timeline li::after { left: 2px; }
+    .timeline time { text-align: left; }
+    .top nav { display: none; }
+    .closed { position: relative; right: auto; bottom: auto; width: 100%; margin-top: -24px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="wordmark">Rev<span>Stream</span></div>
+    <nav aria-label="Sections">
+      <a href="#idea">The idea</a><a href="#timeline">Timeline</a><a href="#today">What it does</a>
+      <a href="#numbers">Numbers</a><a href="#built">How it was built</a><a href="#next">What's next</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero" style="border-top:0">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">An in-house revenue system for a clinical diagnostics lab</p>
+      <h1>From a billing lead's spreadsheet to a revenue system, <em>live in nine weeks.</em></h1>
+      <p class="lede">RevStream started as an idea from the lab's billing lead: stop rebuilding the month by hand. One IT engineer, working with Claude, turned it into the system the billing team now runs on. It prices every case, matches the bank's deposits to the books, and closes the month in one click.</p>
+      <div class="facts"><span><b>Jul 8</b> first version</span><span><b>Sep 11</b> live</span><span><b>159</b> releases</span><span><b>1,194</b> automated tests</span></div>
+    </div>
+    <div class="scene" aria-hidden="true">
+      <div class="sheet">
+        <div class="sheet-bar"><i></i><i></i><i></i>&nbsp; Master file · month-end close</div>
+        <div class="grid">
+          <div class="h"></div><div class="h">J</div><div class="h">K</div><div class="h">L</div><div class="h">M</div>
+          <div class="h">1</div><div>Payer category</div><div>Case type</div><div>Billed</div><div>Revenue</div>
+          <div class="h">2</div><div class="f">=COUNTIFS($J:$J,A2)</div><div class="f">=COUNTIFS($M:$M,"&gt;0",…)</div><div class="f">=SUMIFS($L:$L,$J:$J,A2)</div><div class="f">=SUMIFS($M:$M,$J:$J,A2)</div>
+          <div class="h">3</div><div>…</div><div class="f">=COUNTIFS($K:$K,A3)</div><div>…</div><div class="f">=M3/C3</div>
+          <div class="h">4</div><div class="f">=SUMIFS(Payments!E:E,…)</div><div>…</div><div class="f">=VLOOKUP(H4,Payers!A:C,3)</div><div>…</div>
+          <div class="h">5</div><div>…</div><div class="f">=IFERROR(…)</div><div>…</div><div class="f">=SUM(M2:M1680)</div>
+          <div class="h">6</div><div class="f">=COUNTIFS(…,"BM")</div><div>…</div><div class="f">=L6*$B$1</div><div>…</div>
+          <div class="h">7</div><div>…</div><div>…</div><div class="f">=SUMIFS(…)</div><div>…</div>
+          <div class="h">8</div><div class="f">=VLOOKUP(…)</div><div class="f">=COUNTIFS(…)</div><div>…</div><div>…</div>
+        </div>
+      </div>
+      <div class="closed">
+        <span class="stamp">✓ Reconciled</span>
+        <h3>The month, closed</h3>
+        <div class="row"><span>Revenue report</span><span>frozen</span></div>
+        <div class="row"><span>Bank deposits</span><span>0.00 left</span></div>
+        <div class="row"><span>Pathologist invoices</span><span>ready</span></div>
+        <div class="row"><span>Hand-built report</span><span>matches to the cent</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="idea">
+  <div class="wrap two">
+    <div>
+      <p class="eyebrow">The idea</p>
+      <h2>Every month, the same rebuild, by hand.</h2>
+      <p>The lab's revenue lived in one large Excel master file, fed every day with exports from the lab system and the outsourced billing service. Each sheet was kept in step by hand: cases, CPT lines, payments, payers, the fee schedule.</p>
+      <p>The billing lead knew exactly what the month-end reports should say. Getting there meant rebuilding them from scratch every month with COUNTIFS and SUMIFS, then checking the bank deposits one line at a time.</p>
+      <p>The question was simple: <strong>could the lab have a system that already knows all this?</strong></p>
+    </div>
+    <ul class="chores" aria-label="What month-end used to take">
+      <li>Pasting daily exports into the master file, and catching the ones pasted twice.</li>
+      <li>Pricing every CPT line against the right fee schedule, payer by payer.</li>
+      <li>Matching hundreds of bank deposits to posted payments, by hand.</li>
+      <li>Rebuilding the month's revenue tables with formulas, for every close.</li>
+      <li>Counting each pathologist's sign-outs to prepare their monthly invoice.</li>
+      <li>Answering "where did this number come from?" with no audit trail.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="timeline">
+  <div class="wrap">
+    <p class="eyebrow">Timeline · 2026</p>
+    <h2>Fourteen weeks, meeting by meeting.</h2>
+    <p>Almost every step below began as a meeting with the billing lead in the morning and shipped as a tested release the same day or the next.</p>
+    <ol class="timeline">
+      <li class="key"><time>Jul 8</time><div><b>The first version</b><p>A web app that reads the master file and replaces the spreadsheet's cash-flow workflow. Demoed the next day; the feedback shipped that week.</p></div></li>
+      <li><time>Aug</time><div><b>Hardened to run in-house</b><p>Moved onto the company's own server: two-factor sign-in, encrypted connections only, nightly backups.</p></div></li>
+      <li class="key"><time>Sep 11</time><div><b>Live</b><p>The billing team switches from the master file to RevStream: daily uploads, revenue by CPT line, priced from the fee schedule.</p></div></li>
+      <li><time>Sep 30</time><div><b>A Test system beside the real one</b><p>A full copy where every change is tried on real data before it goes live, chosen at sign-in.</p></div></li>
+      <li><time>Oct 1–2</time><div><b>Payments and bank deposits</b><p>Payments flow in from the billing exports; the bank's deposit log is matched to them, check by check.</p></div></li>
+      <li><time>Oct 6</time><div><b>Audit trail and read-only access</b><p>Who changed what, on every case. Read-only accounts for people who only need the reports.</p></div></li>
+      <li class="key"><time>Oct 8–9</time><div><b>The month-end close, automated</b><p>The revenue report the billing lead built by hand each month, now laid out by the system and matching the hand-built one to the cent. One click closes the month and produces each pathologist's invoice.</p></div></li>
+      <li><time>Oct 12</time><div><b>Reconciliation</b><p>Every difference between the bank and the books explained, case by case and check by check, then accepted with a reason until the month reads Reconciled.</p></div></li>
+      <li class="key next"><time>Nov 1</time><div><b>Full go-live, planned</b><p>The whole monthly cycle runs in RevStream: uploads, revenue, payments, bank reconciliation, close and invoices.</p></div></li>
+    </ol>
+  </div>
+</section>
+
+<section id="today">
+  <div class="wrap">
+    <p class="eyebrow">What it does now</p>
+    <h2>The month, without the rebuild.</h2>
+    <div class="cards">
+      <div class="card"><h3>Files that recognize themselves</h3><p>Drop in the day's export; RevStream works out what it is, previews what's new, backs up first, and never counts a row twice.</p><span class="was">pasting by hand, re-checking</span></div>
+      <div class="card"><h3>Revenue, priced as it's signed off</h3><p>Every CPT line priced from the fee schedule in force on its sign-off date, for each payer category, kept as typed when someone overrides it.</p><span class="was">lookups across sheets</span></div>
+      <div class="card"><h3>Bank deposits, matched</h3><p>Each deposit matched to what was posted by check number; every difference explained, from fees the bank keeps to payments posted twice.</p><span class="was">line by line, by hand</span></div>
+      <div class="card"><h3>The month revenue report</h3><p>Cases by when they came in, billable against signed off, by payer, case type, department and sales rep, as a page, a PDF or Excel.</p><span class="was">COUNTIFS and SUMIFS, monthly</span></div>
+      <div class="card"><h3>Close the month, once</h3><p>One click freezes the month's report and produces each pathologist's invoice, priced from their agreement, ready for approval.</p><span class="was">counting sign-outs per pathologist</span></div>
+      <div class="card"><h3>Controls built in</h3><p>Two-factor sign-in, an audit trail on every change, read-only roles, a Test system and a backup before every import.</p><span class="was">one shared spreadsheet</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="numbers">
+  <div class="wrap">
+    <p class="eyebrow">By the numbers</p>
+    <h2>Built fast, and built to be trusted.</h2>
+    <div class="numbers">
+      <div class="num"><div class="v">9<small>weeks</small></div><div class="l">from the first line of code to the billing team running on it</div></div>
+      <div class="num"><div class="v">159</div><div class="l">releases, each one written up for the people who use it</div></div>
+      <div class="num"><div class="v">1,194</div><div class="l">automated tests, run on every change against the production database engine</div></div>
+      <div class="num"><div class="v">~116<small>hours</small></div><div class="l">of hands-on build time in 14 weeks, plus meetings and testing</div></div>
+      <div class="num"><div class="v">~85%</div><div class="l">less than an outside development estimate for the same system</div></div>
+      <div class="num"><div class="v">1 day</div><div class="l">typical turnaround from a meeting with the billing team to a tested release</div></div>
+    </div>
+    <p class="note">The cost comparison sets the in-house build (time at loaded cost, plus tools) against an outside development estimate for the same scope. It's an estimate, not a quote.</p>
+  </div>
+</section>
+
+<section id="built">
+  <div class="wrap">
+    <p class="eyebrow">How it was built</p>
+    <h2>One engineer, Claude, and the people who do the work.</h2>
+    <p>RevStream was built by the lab's IT engineer working with Claude, Anthropic's AI model, as a pair: the billing team set the direction in regular meetings, and each request became a tested release.</p>
+    <div class="loop">
+      <div><h3>Meet</h3><p>The billing lead walks through what's wrong, or what the next report needs to say.</p></div>
+      <div><h3>Trace</h3><p>The numbers are traced in the real files first, to the cent, so the fix answers the real question.</p></div>
+      <div><h3>Build and test</h3><p>The change is built with tests on made-up data, and checked in a browser in light and dark.</p></div>
+      <div><h3>Test, then live</h3><p>It goes to the Test system for the billing team to try, then to the live system.</p></div>
+    </div>
+    <ul class="principles">
+      <li>No real patient data in tests, screenshots or anything shared.</li>
+      <li>Every release recorded in a changelog, in plain words.</li>
+      <li>Every import backed up first, and undoable.</li>
+      <li>Every hour logged, so the cost is known, not guessed.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="next">
+  <div class="wrap">
+    <p class="eyebrow">What's next</p>
+    <h2>Bringing billing itself in-house.</h2>
+    <div class="next-box">
+      <span class="pending">Pending · clearinghouse setup</span>
+      <p>Today the lab's claims are billed by an outside service, and RevStream reads its exports. The next phase sends claims from RevStream through a clearinghouse and reads the insurers' remittances back, so payments post themselves. That would replace the outside billing service entirely.</p>
+      <div class="flow" aria-label="The planned flow">
+        <span>Case signed off</span><em>→</em><span>Claim built in RevStream</span><em>→</em><span>Clearinghouse</span><em>→</em><span>Insurer</span><em>→</em><span>Remittance back</span><em>→</em><span>Payment posted</span>
+      </div>
+      <p style="margin:12px 0 0">A proof of concept already builds and checks claims on made-up data. It waits on the clearinghouse account. Alongside it: sales commission reports, and invoices sent to accounts payable straight from the closed month.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>RevStream is an internal system; this page tells its story. No patient data, case numbers or company financial figures appear here, and names are left out on purpose.</p>
+    <p>Built by David Dempster with Claude. Django, PostgreSQL, Docker; two-factor sign-in through Duo.</p>
+  </div>
+</footer>
+</body>
+</html>
